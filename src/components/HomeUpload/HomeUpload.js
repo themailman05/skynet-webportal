@@ -37,7 +37,11 @@ export default function HomeUpload() {
         fd.append("file", file);
 
         const uuid = shortid.generate();
-        const response = await fetch(`${location.origin}/skynet/skyfile/${uuid}`, { method: "POST", body: fd });
+        const response = await fetch(`${location.origin}/skynet/skyfile/${uuid}`, {
+          method: "POST",
+          body: fd,
+          mode: "cors"
+        });
         const { skylink } = await response.json();
 
         onComplete(file, "complete", skylink);
