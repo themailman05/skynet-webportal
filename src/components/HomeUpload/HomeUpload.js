@@ -1,6 +1,6 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import classNames from "classnames";
-import Dropzone from "react-dropzone";
+import { useDropzone } from "react-dropzone";
 import Reveal from "react-reveal/Reveal";
 import shortid from "shortid";
 import { Button, UploadFile } from "../";
@@ -11,9 +11,29 @@ import AppContext from "../../AppContext";
 export default function HomeUpload() {
   const [files, setFiles] = useState([]);
   const { apiUrl } = useContext(AppContext);
+  const [directoryMode, setDirectoryMode] = useState(false);
+
+  useEffect(() => {
+    if (directoryMode) {
+      inputRef.current.setAttribute("webkitdirectory", "true");
+    } else {
+      inputRef.current.removeAttribute("webkitdirectory");
+    }
+  }, [directoryMode]);
 
   const handleDrop = async (acceptedFiles) => {
+    const getFilePath = (file) => file.path ?? file.webkitRelativePath ?? file.name;
+
+    if (directoryMode && acceptedFiles.length) {
+      const filePath = getFilePath(acceptedFiles[0]); // get the file path from the first example file
+      const name = filePath.split("/").filter(Boolean)[0]; // find the root directory name
+
+      acceptedFiles = [{ name, directory: true, files: acceptedFiles }];
+    }
+
     setFiles((previousFiles) => [...acceptedFiles.map((file) => ({ file, status: "uploading" })), ...previousFiles]);
+
+    console.log(acceptedFiles);
 
     const onComplete = (file, status, skylink) => {
       setFiles((previousFiles) => {
@@ -31,21 +51,48 @@ export default function HomeUpload() {
       });
     };
 
+    const upload = async (formData, directory) => {
+      const uuid = shortid.generate();
+      const uploadUrl = `${apiUrl}/skynet/skyfile/${uuid}${
+        directory ? `?filename=${encodeURIComponent(directory)}` : ""
+      }`;
+      const response = await fetch(uploadUrl, { method: "POST", body: formData });
+      const { skylink } = await response.json();
+
+      return skylink;
+    };
+
     acceptedFiles.forEach(async (file) => {
       try {
-        const fd = new FormData();
-        fd.append("file", file);
+        const formData = new FormData();
 
-        const uuid = shortid.generate();
-        const response = await fetch(`${apiUrl}/skynet/skyfile/${uuid}`, { method: "POST", body: fd });
-        const { skylink } = await response.json();
+        if (file.directory) {
+          file.files.forEach((directoryFile) => {
+            Object.defineProperty(directoryFile, "name", {
+              writable: true,
+              value: getFilePath(directoryFile)
+            });
+
+            formData.append("files[]", directoryFile);
+          });
+        } else {
+          formData.append("file", file);
+        }
+
+        console.log(file);
+
+        const skylink = await upload(formData, directoryMode && file.name);
 
         onComplete(file, "complete", skylink);
       } catch (error) {
+        console.error(error);
+
         onComplete(file, "error");
       }
     });
   };
+
+  const { getRootProps, getInputProps, isDragActive, inputRef } = useDropzone({ onDrop: handleDrop });
 
   const handleSkylink = (event) => {
     event.preventDefault();
@@ -63,28 +110,44 @@ export default function HomeUpload() {
         <div className="home-upload-white fadeInUp delay4">
           <div className="home-upload-split">
             <div className="home-upload-box ">
-              <Dropzone onDrop={handleDrop}>
-                {({ getRootProps, getInputProps, isDragActive }) => (
-                  <>
-                    <div
-                      className={classNames("home-upload-dropzone", {
-                        "drop-active": isDragActive
-                      })}
-                      {...getRootProps()}
-                    >
-                      <span className="home-upload-text">
-                        <h3>Upload your Files</h3>
-                        Drop your files here to pin to Skynet
-                      </span>
-                      <Button iconLeft>
-                        <Folder />
-                        Browse
-                      </Button>
-                    </div>
-                    <input {...getInputProps()} className="offscreen" />
-                  </>
-                )}
-              </Dropzone>
+              <div
+                className={classNames("home-upload-dropzone", {
+                  "drop-active": isDragActive
+                })}
+                {...getRootProps()}
+              >
+                <span className="home-upload-text">
+                  <h3>Upload your {directoryMode ? "Directory" : "Files"}</h3>
+                  Drop your {directoryMode ? "directory" : "files"} here to pin to Skynet
+                </span>
+                <Button iconLeft>
+                  <Folder />
+                  Browse
+                </Button>
+              </div>
+              <input {...getInputProps()} className="offscreen" />
+              <button
+                type="button"
+                className="home-upload-mode-switch link"
+                onClick={() => setDirectoryMode(!directoryMode)}
+              >
+                {directoryMode ? "⇐ Switch back to uploading files" : "Do you want to upload entire directory?"}
+              </button>
+              {directoryMode && (
+                <p className="home-upload-directory-mode-notice">
+                  Please note that directory upload is not a standard browser feature and the browser support is
+                  limited. To check whether your browser is compatible, visit{" "}
+                  <a
+                    href="https://caniuse.com/#feat=mdn-api_htmlinputelement_webkitdirectory"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link"
+                  >
+                    caniuse.com
+                  </a>
+                  .
+                </p>
+              )}
             </div>
 
             <div className="home-upload-retrieve">
